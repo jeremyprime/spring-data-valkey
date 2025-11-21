@@ -745,7 +745,8 @@ public class LettuceConnection extends AbstractValkeyConnection {
 
 		this.dbIndex = dbIndex;
 
-		invokeStatus().just(RedisClusterAsyncCommands::dispatch, CommandType.SELECT,
+		invokeStatus().<String, ProtocolKeyword, CommandOutput<byte[], byte[], String>, CommandArgs<byte[], byte[]>>just(
+				RedisClusterAsyncCommands::dispatch, CommandType.SELECT,
 				new StatusOutput<>(ByteArrayCodec.INSTANCE), new CommandArgs<>(ByteArrayCodec.INSTANCE).add(dbIndex));
 	}
 

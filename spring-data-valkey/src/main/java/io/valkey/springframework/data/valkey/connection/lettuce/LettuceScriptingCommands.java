@@ -80,7 +80,8 @@ class LettuceScriptingCommands implements ValkeyScriptingCommands {
 		String convertedScript = LettuceConverters.toString(script);
 
 		return connection
-				.invoke().from(RedisScriptingAsyncCommands::eval, convertedScript,
+				.invoke().<Object, String, io.lettuce.core.ScriptOutputType, byte[][], byte[][]>from(
+						RedisScriptingAsyncCommands::eval, convertedScript,
 						LettuceConverters.toScriptOutputType(returnType), keys, args)
 				.get(new LettuceEvalResultsConverter<T>(returnType));
 	}
@@ -94,7 +95,8 @@ class LettuceScriptingCommands implements ValkeyScriptingCommands {
 		byte[][] args = extractScriptArgs(numKeys, keysAndArgs);
 
 		return connection
-				.invoke().from(RedisScriptingAsyncCommands::evalsha, scriptSha1,
+				.invoke().<Object, String, io.lettuce.core.ScriptOutputType, byte[][], byte[][]>from(
+						RedisScriptingAsyncCommands::evalsha, scriptSha1,
 						LettuceConverters.toScriptOutputType(returnType), keys, args)
 				.get(new LettuceEvalResultsConverter<T>(returnType));
 	}
