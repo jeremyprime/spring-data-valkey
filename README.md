@@ -2,7 +2,7 @@
 
 Spring Data Valkey is a dedicated integration module for the [Valkey](https://valkey.io/) data store, a high-performance, Redis-compatible in-memory database. The project is a fork of Spring Data Redis 3.5.1, created to offer first-class support for Valkey and to ensure seamless, optimized access to the Valkey ecosystem.
 
-This project provides both the [core Spring Data Valkey library](spring-data-valkey/) and a [Spring Boot starter](spring-boot-starter-data-valkey/) for auto-configuration. It is purpose-built to provide the best possible experience when using Valkey from Spring applications, leveraging the specialized [Valkey-GLIDE](https://github.com/valkey-io/valkey-glide) client library for high-performance, cross-language connectivity. By aligning API compatibility with Spring Data Redis, Spring Data Valkey enables developers to migrate with minimal friction while benefiting from improved performance, modern driver capabilities, and long-term support for the Valkey platform.
+This project provides both the core [Spring Data Valkey library](spring-data-valkey/) and a [Spring Boot starter](spring-boot-starter-data-valkey/) for auto-configuration. It is purpose-built to provide the best possible experience when using Valkey from Spring applications, leveraging the specialized [Valkey-GLIDE](https://github.com/valkey-io/valkey-glide) client library for high-performance, cross-language connectivity. By aligning API compatibility with Spring Data Redis, Spring Data Valkey enables developers to migrate with minimal friction while benefiting from improved performance, modern driver capabilities, and long-term support for the Valkey platform.
 
 ## Features
 

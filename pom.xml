@@ -9,6 +9,14 @@
 	<packaging>pom</packaging>
 
 	<name>Spring Data Valkey Parent</name>
+	<description>Global parent pom.xml to be used by Spring Data Valkey modules</description>
+
+	<modules>
+		<module>spring-data-valkey</module>
+		<module>spring-boot-starter-data-valkey</module>
+		<module>examples</module>
+		<module>performance</module>
+	</modules>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -247,12 +255,5 @@
 			</plugins>
 		</pluginManagement>
 	</build>
-
-	<modules>
-		<module>spring-data-valkey</module>
-		<module>spring-boot-starter-data-valkey</module>
-		<module>examples</module>
-		<module>performance</module>
-	</modules>
 
 </project>

@@ -13,10 +13,10 @@ Spring Data Valkey is organized as a multi-module Maven project:
 
 ## Prerequisites
 
-* **JDK 17 or above** - Required for compilation and runtime
+* **JDK 17+** - Required for compilation and runtime
+* **Maven v3.8.0+** - If using `mvn` command (or use included `./mvnw`)
 * **make** - For managing Valkey test infrastructure
-* **Maven v3.8.0 or above** - If using `mvn` command (or use included `./mvnw`)
-* **Docker** (optional) - For testcontainers/Docker tests
+* **Docker** - For testcontainers/Docker tests
 
 ## Getting Started
 
@@ -53,7 +53,7 @@ $ make clean    # Clean up containers and data
 Once instances are running, execute tests from your IDE or run the Maven build:
 
 ```bash
-$ ./mvnw clean install
+$ ./mvnw clean test
 ```
 
 ## Building the Project
