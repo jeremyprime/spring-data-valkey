@@ -36,6 +36,8 @@ import glide.api.models.configuration.RequestRoutingConfiguration.SimpleMultiNod
 import glide.api.models.configuration.ServiceType;
 import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
+import glide.api.models.commands.scan.ClusterScanCursor;
+import glide.api.models.commands.scan.ScanOptions;
 import org.springframework.lang.Nullable;
 import org.springframework.util.StringUtils;
 
@@ -494,6 +496,26 @@ class ClusterGlideClientAdapter implements UnifiedGlideClient {
 
     public void setOneShotRouteForNextCommand(Route glideRoute) {
         nextCommandRoute = glideRoute;
+    }
+
+    boolean hasOneShotRouteForNextCommand() {
+        return nextCommandRoute != null;
+    }
+
+    Object[] scan(ClusterScanCursor cursor) throws InterruptedException, ExecutionException {
+        try {
+            return glideClusterClient.scanBinary(cursor).get();
+        } finally {
+            nextCommandRoute = null;
+        }
+    }
+
+    Object[] scan(ClusterScanCursor cursor, ScanOptions options) throws InterruptedException, ExecutionException {
+        try {
+            return glideClusterClient.scanBinary(cursor, options).get();
+        } finally {
+            nextCommandRoute = null;
+        }
     }
     
     public Object customCommand(GlideString[] args, ValkeyClusterNode node) throws InterruptedException, ExecutionException {
