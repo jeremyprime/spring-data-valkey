@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2025 the original author or authors.
+ * Copyright 2011-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.dao.InvalidDataAccessApiUsageException;
+import io.valkey.springframework.data.valkey.connection.CompareCondition;
 import io.valkey.springframework.data.valkey.connection.DataType;
 import io.valkey.springframework.data.valkey.connection.ExpirationOptions;
 import io.valkey.springframework.data.valkey.connection.ValkeyKeyCommands;
@@ -30,7 +31,7 @@ import io.valkey.springframework.data.valkey.connection.SortParameters;
 import io.valkey.springframework.data.valkey.connection.ValueEncoding;
 import io.valkey.springframework.data.valkey.core.Cursor;
 import io.valkey.springframework.data.valkey.core.ScanOptions;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.springframework.util.Assert;
 
 import glide.api.models.GlideString;
@@ -694,4 +695,60 @@ public class ValkeyGlideKeyCommands implements ValkeyKeyCommands {
             throw new ValkeyGlideExceptionConverter().convert(ex);
         }
     }
+
+	@Override
+	public Boolean delex(byte[] key, CompareCondition condition) {
+		Assert.notNull(key, "Key must not be null");
+		Assert.notNull(condition, "CompareCondition must not be null");
+		try {
+			List<Object> args = new ArrayList<>();
+			args.add(key);
+			// Add condition
+			switch (condition.getComparison()) {
+				case VALUE -> {
+					if (condition.getOperator() == CompareCondition.ComparisonOperator.EQUALS) {
+						args.add("IFEQ");
+					} else {
+						args.add("IFNE");
+					}
+					args.add(condition.getValue().asBytes());
+				}
+				case DIGEST -> {
+					if (condition.getOperator() == CompareCondition.ComparisonOperator.EQUALS) {
+						args.add("IFDEQ");
+					} else {
+						args.add("IFDNE");
+					}
+					args.add(condition.getValue().asBytes());
+				}
+			}
+			return connection.execute("DELEX",
+				(Object glideResult) -> {
+					if (glideResult == null) return false;
+					if (glideResult instanceof Long l) return l > 0;
+					if (glideResult instanceof GlideString gs) {
+						throw new InvalidDataAccessApiUsageException(gs.getString());
+					}
+					if (glideResult instanceof String s) {
+						throw new InvalidDataAccessApiUsageException(s);
+					}
+					throw new IllegalStateException("Unexpected DELEX reply: " + glideResult);
+				},
+				args.toArray());
+		} catch (Exception ex) {
+			throw new ValkeyGlideExceptionConverter().convert(ex);
+		}
+	}
+
+	@Override
+	public String digest(byte[] key) {
+		Assert.notNull(key, "Key must not be null");
+		try {
+			return connection.execute("DIGEST",
+				(GlideString glideResult) -> glideResult != null ? glideResult.getString() : null,
+				key);
+		} catch (Exception ex) {
+			throw new ValkeyGlideExceptionConverter().convert(ex);
+		}
+	}
 }

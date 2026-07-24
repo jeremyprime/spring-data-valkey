@@ -38,7 +38,7 @@ import glide.api.models.ClusterValue;
 import glide.api.models.GlideString;
 import glide.api.models.commands.scan.ClusterScanCursor;
 import glide.api.models.commands.scan.ScanOptions;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.springframework.util.StringUtils;
 
 import io.valkey.springframework.data.valkey.connection.ValkeyClusterConfiguration;
@@ -389,6 +389,7 @@ class ClusterGlideClientAdapter implements UnifiedGlideClient {
     public Object customCommand(GlideString[] args) throws InterruptedException, ExecutionException {
         if (currentBatch != null) {
             currentBatch.customCommand(args);
+            nextCommandRoute = null; // Clear route even in batch mode to prevent leaking to post-batch commands
             return null;
         }
         try {
@@ -496,6 +497,17 @@ class ClusterGlideClientAdapter implements UnifiedGlideClient {
 
     public void setOneShotRouteForNextCommand(Route glideRoute) {
         nextCommandRoute = glideRoute;
+    }
+
+    /**
+     * Consumes and returns the current one-shot route, clearing it.
+     * Used to capture the route for long-lived operations like multi-page SCAN.
+     */
+    @Nullable
+    Route consumeOneShotRoute() {
+        Route route = nextCommandRoute;
+        nextCommandRoute = null;
+        return route;
     }
 
     boolean hasOneShotRouteForNextCommand() {
