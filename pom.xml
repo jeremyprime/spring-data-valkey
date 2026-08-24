@@ -40,7 +40,7 @@
 		<jackson3.version>3.1.4</jackson3.version>
 		<micrometer.version>1.17.0</micrometer.version>
 		<spring-messaging.version>7.0.8</spring-messaging.version>
-		<beanutils.version>1.9.4</beanutils.version>
+		<beanutils.version>1.11.0</beanutils.version>
 		<xstream.version>1.4.21</xstream.version>
 		<jspecify.version>1.0.0</jspecify.version>
 		<netty.version>4.2.10.Final</netty.version>
