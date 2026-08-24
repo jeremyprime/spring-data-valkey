@@ -23,11 +23,19 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.thread.Threading;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnThreading;
+import org.springframework.boot.ssl.SslBundle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.util.StringUtils;
 import org.springframework.util.Assert;
+
+import java.io.ByteArrayOutputStream;
+import java.security.KeyStore;
+import java.security.cert.Certificate;
+import java.util.Base64;
+import java.util.Enumeration;
+
 import io.valkey.springframework.data.valkey.connection.ValkeyClusterConfiguration;
 import io.valkey.springframework.data.valkey.connection.ValkeyStaticMasterReplicaConfiguration;
 import io.valkey.springframework.data.valkey.connection.ValkeyConnectionFactory;
@@ -107,6 +115,7 @@ class ValkeyGlideConnectionConfiguration extends ValkeyConnectionConfiguration {
 		}
 		if (getProperties().getSsl().isEnabled() || getSslBundle() != null) {
 			builder.useSsl();
+			applySslBundle(builder, getSslBundle());
 		}
 		if (StringUtils.hasText(getProperties().getUrl())) {
 			customizeConfigurationFromUrl(builder);
@@ -179,6 +188,110 @@ class ValkeyGlideConnectionConfiguration extends ValkeyConnectionConfiguration {
 		}
 		catch (IllegalArgumentException ex) {
 			throw new IllegalArgumentException("Invalid readFrom value: " + readFrom, ex);
+		}
+	}
+
+	/**
+	 * Apply an {@link SslBundle} to the GLIDE client configuration.
+	 * <p>
+	 * The GLIDE client only supports supplying custom root (CA) certificates for server verification. Client key
+	 * material (mutual TLS), custom cipher suites, and explicit protocol selection are not supported by the GLIDE
+	 * driver. Rather than silently ignoring configured material, this method fails fast with a clear error so that a
+	 * misconfiguration cannot lead to a connection that trusts material the operator did not intend.
+	 * @param builder the GLIDE client configuration builder.
+	 * @param sslBundle the SSL bundle, may be {@literal null}.
+	 */
+	private void applySslBundle(ValkeyGlideClientConfiguration.ValkeyGlideClientConfigurationBuilder builder,
+			@org.jspecify.annotations.Nullable SslBundle sslBundle) {
+		if (sslBundle == null) {
+			return;
+		}
+
+		// Fail fast: the GLIDE version currently in use cannot present a client certificate (no mutual TLS
+		// support). GLIDE added mTLS in a later release; when the bundled GLIDE version is upgraded, this
+		// guard can be replaced by wiring the client key material through TlsAdvancedConfiguration#useMutualTls.
+		if (hasClientKeyMaterial(sslBundle)) {
+			throw new IllegalStateException(
+					"The Valkey GLIDE driver does not support mutual TLS (client certificates). "
+							+ "The configured SSL bundle contains client key material that would be silently ignored. "
+							+ "Remove the key store from the SSL bundle, or use the Lettuce driver for mutual TLS.");
+		}
+
+		// Fail fast: GLIDE does not support custom cipher suites or explicit protocol selection.
+		if (sslBundle.getOptions() != null) {
+			if (sslBundle.getOptions().getCiphers() != null) {
+				throw new IllegalStateException(
+						"The Valkey GLIDE driver does not support configuring TLS cipher suites via an SSL bundle. "
+								+ "Remove 'ciphers' from the SSL bundle options, or use the Lettuce driver.");
+			}
+			if (sslBundle.getOptions().getEnabledProtocols() != null) {
+				throw new IllegalStateException(
+						"The Valkey GLIDE driver does not support configuring TLS protocols via an SSL bundle. "
+								+ "Remove 'enabled-protocols' from the SSL bundle options, or use the Lettuce driver.");
+			}
+		}
+
+		// Supported: custom root (CA) certificates for server verification.
+		byte[] trustCertificates = extractTrustCertificates(sslBundle);
+		if (trustCertificates != null) {
+			builder.tlsTrustCertificates(trustCertificates);
+		}
+	}
+
+	/**
+	 * Determine whether the bundle's key store contains a private key entry (i.e. client key material for mutual TLS).
+	 * A key store that holds only certificate entries is not considered client key material.
+	 * @param sslBundle the SSL bundle.
+	 * @return {@literal true} if a private key entry is present.
+	 */
+	private boolean hasClientKeyMaterial(SslBundle sslBundle) {
+		try {
+			KeyStore keyStore = sslBundle.getStores().getKeyStore();
+			if (keyStore == null) {
+				return false;
+			}
+			for (Enumeration<String> aliases = keyStore.aliases(); aliases.hasMoreElements();) {
+				if (keyStore.isKeyEntry(aliases.nextElement())) {
+					return true;
+				}
+			}
+			return false;
+		}
+		catch (Exception ex) {
+			throw new IllegalStateException("Failed to inspect the configured SSL bundle key store", ex);
+		}
+	}
+
+	/**
+	 * Extract the trusted (CA) certificates from the bundle's trust store and encode them as a PEM byte array suitable
+	 * for GLIDE's {@code rootCertificates} option.
+	 * @param sslBundle the SSL bundle.
+	 * @return the PEM-encoded certificates, or {@literal null} if the bundle has no trust store.
+	 */
+	private byte @org.jspecify.annotations.Nullable [] extractTrustCertificates(SslBundle sslBundle) {
+		try {
+			KeyStore trustStore = sslBundle.getStores().getTrustStore();
+			if (trustStore == null) {
+				return null;
+			}
+			ByteArrayOutputStream pem = new ByteArrayOutputStream();
+			Base64.Encoder encoder = Base64.getMimeEncoder(64, "\n".getBytes());
+			boolean found = false;
+			for (Enumeration<String> aliases = trustStore.aliases(); aliases.hasMoreElements();) {
+				String alias = aliases.nextElement();
+				Certificate certificate = trustStore.getCertificate(alias);
+				if (certificate == null) {
+					continue;
+				}
+				found = true;
+				pem.write("-----BEGIN CERTIFICATE-----\n".getBytes());
+				pem.write(encoder.encode(certificate.getEncoded()));
+				pem.write("\n-----END CERTIFICATE-----\n".getBytes());
+			}
+			return found ? pem.toByteArray() : null;
+		}
+		catch (Exception ex) {
+			throw new IllegalStateException("Failed to extract trust certificates from the configured SSL bundle", ex);
 		}
 	}
 

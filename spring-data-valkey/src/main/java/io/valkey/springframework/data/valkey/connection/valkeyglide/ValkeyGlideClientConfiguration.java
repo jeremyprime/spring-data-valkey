@@ -67,6 +67,13 @@ public interface ValkeyGlideClientConfiguration {
 	boolean isUseSsl();
 
 	/**
+	 * Get the custom TLS root (CA) certificates used to verify the server, in PEM or DER encoding. When present, these
+	 * replace GLIDE's default trust material. Only consulted when {@link #isUseSsl()} is {@literal true}.
+	 * @return the root certificate bytes, or {@literal null} to use GLIDE's default trust store.
+	 */
+	byte @Nullable [] getTlsTrustCertificates();
+
+	/**
 	 * Get the read from strategy for the client.
 	 * @return The {@link ReadFrom} strategy. May be {@literal null} if not set.
 	 */
@@ -193,6 +200,8 @@ public interface ValkeyGlideClientConfiguration {
 
 		private boolean useSsl = false;
 
+		private byte @Nullable [] tlsTrustCertificates;
+
 		private @Nullable ReadFrom readFrom;
 
 		private @Nullable Integer inflightRequestsLimit;
@@ -236,6 +245,18 @@ public interface ValkeyGlideClientConfiguration {
 		 */
 		public ValkeyGlideClientConfigurationBuilder useSsl() {
 			this.useSsl = true;
+			return this;
+		}
+
+		/**
+		 * Provide custom TLS root (CA) certificates used to verify the server, in PEM or DER encoding. Implies
+		 * {@link #useSsl()}. When set, these replace GLIDE's default trust material.
+		 * @param tlsTrustCertificates the root certificate bytes.
+		 * @return {@literal this} builder.
+		 */
+		public ValkeyGlideClientConfigurationBuilder tlsTrustCertificates(byte[] tlsTrustCertificates) {
+			this.useSsl = true;
+			this.tlsTrustCertificates = tlsTrustCertificates;
 			return this;
 		}
 
@@ -320,9 +341,9 @@ public interface ValkeyGlideClientConfiguration {
 		 * @return a new {@link ValkeyGlideClientConfiguration} instance.
 		 */
 		public ValkeyGlideClientConfiguration build() {
-			return new DefaultValkeyGlideClientConfiguration(commandTimeout, useSsl, connectionTimeout, readFrom,
-					inflightRequestsLimit, clientAZ, reconnectStrategy, maxPoolSize, openTelemetryForGlide,
-					iamAuthentication);
+			return new DefaultValkeyGlideClientConfiguration(commandTimeout, useSsl, tlsTrustCertificates,
+					connectionTimeout, readFrom, inflightRequestsLimit, clientAZ, reconnectStrategy, maxPoolSize,
+					openTelemetryForGlide, iamAuthentication);
 		}
 
 	}

@@ -192,6 +192,14 @@ spring.data.valkey.ssl.enabled=true
 spring.data.valkey.ssl.bundle=valkey-ssl
 ```
 
+When an SSL bundle is configured, the trusted (CA) certificates from the bundle's trust store are applied to all
+drivers for server verification.
+
+> **GLIDE driver TLS support:** At the current GLIDE version, the GLIDE driver supports custom trust (CA)
+> certificates only. Mutual TLS, custom cipher suites, and explicit protocol selection are not supported; an SSL
+> bundle configuring any of these on the GLIDE client type fails fast at startup rather than being silently
+> ignored. Mutual TLS support is planned for a future version.
+
 ### Advanced Configuration
 
 ```properties

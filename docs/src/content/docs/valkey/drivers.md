@@ -122,6 +122,13 @@ public ValkeyGlideConnectionFactory valkeyGlideConnectionFactory() {
 
 For more detailed client configuration options, see `io.valkey.springframework.data.valkey.connection.valkeyglide.ValkeyGlideClientConfiguration`.
 
+:::note
+At the current GLIDE version, the GLIDE driver supports custom trust (CA) certificates only, via
+`ValkeyGlideClientConfiguration.builder().tlsTrustCertificates(byte[])` (PEM or DER). Mutual TLS, custom cipher
+suites, and explicit protocol selection are not supported; with the Spring Boot starter, configuring any of these
+via an SSL bundle fails fast at startup. Mutual TLS support is planned for a future version.
+:::
+
 ## Configuring the Lettuce Connector
 
 [Lettuce](https://github.com/lettuce-io/lettuce-core) is a [Netty](https://netty.io/)-based open-source connector supported by Spring Data Valkey through the `io.valkey.springframework.data.valkey.connection.lettuce` package.

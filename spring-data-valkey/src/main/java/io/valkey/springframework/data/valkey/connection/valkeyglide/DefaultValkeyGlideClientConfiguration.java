@@ -34,6 +34,8 @@ public class DefaultValkeyGlideClientConfiguration implements ValkeyGlideClientC
 
 	private final boolean useSsl;
 
+	private final byte @Nullable [] tlsTrustCertificates;
+
 	private final @Nullable Duration connectionTimeout;
 
 	private final @Nullable ReadFrom readFrom;
@@ -51,16 +53,18 @@ public class DefaultValkeyGlideClientConfiguration implements ValkeyGlideClientC
 	private final @Nullable IamAuthenticationForGlide iamAuthentication;
 
 	DefaultValkeyGlideClientConfiguration() {
-		this(null, false, null, null, null, null, null, 8, null, null);
+		this(null, false, null, null, null, null, null, null, 8, null, null);
 	}
 
 	public DefaultValkeyGlideClientConfiguration(@Nullable Duration commandTimeout, boolean useSsl,
-			@Nullable Duration connectionTimeout, @Nullable ReadFrom readFrom, @Nullable Integer inflightRequestsLimit,
-			@Nullable String clientAZ, @Nullable BackoffStrategy reconnectStrategy, int maxPoolSize,
+			byte @Nullable [] tlsTrustCertificates, @Nullable Duration connectionTimeout, @Nullable ReadFrom readFrom,
+			@Nullable Integer inflightRequestsLimit, @Nullable String clientAZ,
+			@Nullable BackoffStrategy reconnectStrategy, int maxPoolSize,
 			@Nullable OpenTelemetryForGlide openTelemetryForGlide,
 			@Nullable IamAuthenticationForGlide iamAuthentication) {
 		this.commandTimeout = commandTimeout;
 		this.useSsl = useSsl;
+		this.tlsTrustCertificates = tlsTrustCertificates;
 		this.connectionTimeout = connectionTimeout;
 		this.readFrom = readFrom;
 		this.inflightRequestsLimit = inflightRequestsLimit;
@@ -80,6 +84,11 @@ public class DefaultValkeyGlideClientConfiguration implements ValkeyGlideClientC
 	@Override
 	public boolean isUseSsl() {
 		return useSsl;
+	}
+
+	@Override
+	public byte @Nullable [] getTlsTrustCertificates() {
+		return tlsTrustCertificates;
 	}
 
 	@Nullable

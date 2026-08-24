@@ -349,16 +349,31 @@ class ValkeyAutoConfigurationTests {
 	}
 
 	@Test
-	@WithPackageResources("test.jks")
+	@WithPackageResources("test-truststore.jks")
 	void testValkeyConfigurationWithSslBundle() {
+		this.contextRunner
+			.withPropertyValues("spring.data.valkey.ssl.bundle:test-bundle",
+					"spring.ssl.bundle.jks.test-bundle.truststore.location:classpath:test-truststore.jks",
+					"spring.ssl.bundle.jks.test-bundle.truststore.password:secret")
+			.run((context) -> {
+				ValkeyGlideConnectionFactory cf = context.getBean(ValkeyGlideConnectionFactory.class);
+				assertThat(cf.isUseSsl()).isTrue();
+			});
+	}
+
+	@Test
+	@WithPackageResources("test.jks")
+	void testValkeyConfigurationFailsFastWithMutualTlsBundle() {
+		// test.jks contains a private key entry (client key material). GLIDE cannot present a client
+		// certificate, so configuring mutual TLS must fail fast rather than be silently ignored.
 		this.contextRunner
 			.withPropertyValues("spring.data.valkey.ssl.bundle:test-bundle",
 					"spring.ssl.bundle.jks.test-bundle.keystore.location:classpath:test.jks",
 					"spring.ssl.bundle.jks.test-bundle.keystore.password:secret",
 					"spring.ssl.bundle.jks.test-bundle.key.password:password")
 			.run((context) -> {
-				ValkeyGlideConnectionFactory cf = context.getBean(ValkeyGlideConnectionFactory.class);
-				assertThat(cf.isUseSsl()).isTrue();
+				assertThat(context).hasFailed();
+				assertThat(context).getFailure().hasMessageContaining("does not support mutual TLS");
 			});
 	}
 

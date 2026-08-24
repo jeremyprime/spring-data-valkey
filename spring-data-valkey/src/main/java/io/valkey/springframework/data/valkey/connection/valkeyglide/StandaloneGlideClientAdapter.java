@@ -116,11 +116,22 @@ class StandaloneGlideClientAdapter implements UnifiedGlideClient {
 			configBuilder.requestTimeout((int) commandTimeout.toMillis());
 		}
 
-		// Connection timeout
+		// Advanced configuration (connection timeout + TLS trust material)
 		Duration connectionTimeout = valkeyGlideConfiguration.getConnectionTimeout();
-		if (connectionTimeout != null) {
+		byte[] trustCerts = valkeyGlideConfiguration.isUseSsl()
+				? valkeyGlideConfiguration.getTlsTrustCertificates()
+				: null;
+		if (connectionTimeout != null || trustCerts != null) {
 			var advancedConfigBuilder = AdvancedGlideClientConfiguration.builder();
-			advancedConfigBuilder.connectionTimeout((int) connectionTimeout.toMillis());
+			if (connectionTimeout != null) {
+				advancedConfigBuilder.connectionTimeout((int) connectionTimeout.toMillis());
+			}
+			if (trustCerts != null) {
+				advancedConfigBuilder.tlsAdvancedConfiguration(
+						glide.api.models.configuration.TlsAdvancedConfiguration.builder()
+								.rootCertificates(trustCerts)
+								.build());
+			}
 			configBuilder.advancedConfiguration(advancedConfigBuilder.build());
 		}
 
