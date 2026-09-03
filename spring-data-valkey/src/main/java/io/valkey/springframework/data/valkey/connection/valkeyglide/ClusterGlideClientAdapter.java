@@ -175,8 +175,8 @@ class ClusterGlideClientAdapter implements UnifiedGlideClient {
 		subConfigBuilder.callback((msg, context) -> this.listener.onMessage(msg, context));
 		configBuilder.subscriptionConfiguration(subConfigBuilder.build());
 
-		// Set library name for server-side client identification
-		configBuilder.libName("GlideSpringDataValkey");
+		// Report as GlideJava(SpringDataValkey), preserving the underlying driver identity.
+		configBuilder.clientInfoTag(CLIENT_INFO_TAG);
 
 		// Build and create cluster client
 		GlideClusterClientConfiguration config = configBuilder.build();
@@ -415,8 +415,11 @@ class ClusterGlideClientAdapter implements UnifiedGlideClient {
 			ClusterValue<?> clusterValue = nextCommandRoute == null ? glideClusterClient.customCommand(args).get()
 					: glideClusterClient.customCommand(args, nextCommandRoute).get();
 
-			// Case 1: Explicit multi-node route - return multiValue for aggregation
-			if (needToAggregateResult(nextCommandRoute)) {
+			// Case 1: Explicit multi-node route - return multiValue for aggregation.
+			// Guard with hasMultiData(): some commands routed to all primaries (e.g. SAVE)
+			// return a single value rather than a per-node map, in which case we fall
+			// through to single-value handling instead of failing.
+			if (needToAggregateResult(nextCommandRoute) && clusterValue.hasMultiData()) {
 				return clusterValue.getMultiValue();
 			}
 
