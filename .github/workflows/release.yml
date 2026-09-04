@@ -180,36 +180,85 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy and release to Maven Central
+      - name: Deploy to Maven Central staging
         id: deploy
         run: |
+          # Uploads + closes the staging repo, registering a VALIDATED deployment on the
+          # Portal. autoReleaseAfterClose is intentionally omitted: it is a no-op on the
+          # Portal compatibility API; the release is performed explicitly below.
           ./mvnw -s settings.xml \
             -Ddevelocity.storage.directory=$HOME/.develocity-root \
             -Dmaven.repo.local=$HOME/.m2/spring-data-valkey \
             deploy -DskipTests \
             -pl spring-data-valkey,spring-boot-starter-data-valkey \
             -Dmaven.deploy.skip=false \
-            -DautoReleaseAfterClose=true \
             -U -B
 
-      - name: Drop staging repository on failure
-        if: failure() && steps.deploy.outcome == 'failure'
+      - name: Release deployment to Maven Central
+        id: release
         run: |
-          echo "Deploy failed - attempting to drop staging repository..."
-          AUTH_HEADER="Bearer $(echo -n "${OSSRH_USERNAME}:${OSSRH_PASSWORD}" | base64)"
+          set -euo pipefail
+          PORTAL="https://central.sonatype.com/api/v1/publisher"
+          STAGING="https://ossrh-staging-api.central.sonatype.com/manual/search/repositories"
+
+          state_of() {
+            curl -s -X POST -u "$OSSRH_USERNAME:$OSSRH_PASSWORD" "${PORTAL}/status?id=$1" | jq -r '.deploymentState'
+          }
+
+          # Find the Portal deployment id created by the maven deploy above.
+          REPOS="$(curl -s -u "$OSSRH_USERNAME:$OSSRH_PASSWORD" "${STAGING}?profile_id=io.valkey&state=closed")"
+          echo "$REPOS" | jq '.repositories | map({key, description, state, portal_deployment_id})'
+          if [ "$(echo "$REPOS" | jq '.repositories | length')" != "1" ]; then
+            echo "ERROR: expected exactly 1 closed staging repo."
+            exit 1
+          fi
+          DEPLOYMENT_ID="$(echo "$REPOS" | jq -r '.repositories[0].portal_deployment_id')"
+          echo "Deployment: $DEPLOYMENT_ID"
+
+          # Wait for validation to finish before publishing.
+          for i in $(seq 1 30); do
+            STATE="$(state_of "$DEPLOYMENT_ID")"; echo "  validate [$i] $STATE"
+            case "$STATE" in
+              VALIDATED) break ;;
+              FAILED) echo "ERROR: validation FAILED."; exit 1 ;;
+            esac
+            [ "$i" = 30 ] && { echo "ERROR: timed out waiting for VALIDATED."; exit 1; }
+            sleep 10
+          done
+
+          # Publish (irreversible).
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST -u "$OSSRH_USERNAME:$OSSRH_PASSWORD" "${PORTAL}/deployment/${DEPLOYMENT_ID}")"
+          echo "Publish HTTP $CODE"
+          [ "$CODE" = "204" ] || [ "$CODE" = "200" ] || { echo "ERROR: publish returned $CODE"; exit 1; }
+
+          # Confirm it reaches PUBLISHED.
+          for i in $(seq 1 30); do
+            STATE="$(state_of "$DEPLOYMENT_ID")"; echo "  publish [$i] $STATE"
+            case "$STATE" in
+              PUBLISHED) echo "Released to Maven Central."; exit 0 ;;
+              FAILED) echo "ERROR: publish FAILED."; exit 1 ;;
+            esac
+            sleep 20
+          done
+          echo "ERROR: timed out waiting for PUBLISHED (last: $STATE)."
+          exit 1
+
+      - name: Drop staging repository on failure
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.release.outcome == 'failure')
+        run: |
+          # Clean up the staging repo so a retry starts fresh.
+          AUTH_HEADER="Bearer $(echo -n "${OSSRH_USERNAME}:${OSSRH_PASSWORD}" | base64 | tr -d '\n')"
           REPOS=$(curl -s --header "Authorization: ${AUTH_HEADER}" \
-            "https://ossrh-staging-api.central.sonatype.com/manual/search/repositories?profile_id=io.valkey.springframework&state=open")
+            "https://ossrh-staging-api.central.sonatype.com/manual/search/repositories?profile_id=io.valkey")
           REPO_COUNT=$(echo "$REPOS" | jq '.repositories | length')
           if [ "$REPO_COUNT" = "1" ]; then
             REPO_KEY=$(echo "$REPOS" | jq -r '.repositories[0].key')
             echo "Dropping repository: $REPO_KEY"
-            curl --fail --request DELETE \
-              --header "Authorization: ${AUTH_HEADER}" \
+            curl --fail --request DELETE --header "Authorization: ${AUTH_HEADER}" \
               "https://ossrh-staging-api.central.sonatype.com/manual/drop/repository/${REPO_KEY}"
-            echo "Staging repository dropped - safe to retry"
           elif [ "$REPO_COUNT" = "0" ]; then
-            echo "No open staging repository found - nothing to clean up"
+            echo "No staging repository found - nothing to clean up"
           else
-            echo "Multiple open staging repositories found ($REPO_COUNT) - skipping automatic cleanup to avoid dropping wrong repo"
+            echo "Multiple staging repositories found ($REPO_COUNT) - manual cleanup required"
             echo "$REPOS" | jq '.repositories'
           fi
