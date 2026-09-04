@@ -180,85 +180,94 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy to Maven Central staging
-        id: deploy
+      - name: Build and sign artifacts
+        id: build
         run: |
-          # Uploads + closes the staging repo, registering a VALIDATED deployment on the
-          # Portal. autoReleaseAfterClose is intentionally omitted: it is a no-op on the
-          # Portal compatibility API; the release is performed explicitly below.
+          # Build + GPG-sign the publishable modules locally (no deploy to staging).
           ./mvnw -s settings.xml \
             -Ddevelocity.storage.directory=$HOME/.develocity-root \
             -Dmaven.repo.local=$HOME/.m2/spring-data-valkey \
-            deploy -DskipTests \
-            -pl spring-data-valkey,spring-boot-starter-data-valkey \
-            -Dmaven.deploy.skip=false \
+            clean install javadoc:jar -DskipTests \
+            -pl spring-data-valkey,spring-boot-starter-data-valkey -am \
             -U -B
 
-      - name: Release deployment to Maven Central
+      - name: Assemble Central bundle
+        id: bundle
+        run: |
+          set -euo pipefail
+          VERSION="$(./mvnw -s settings.xml help:evaluate -Dexpression=project.version -q -DforceStdout -N)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # module_dir|group_path|artifact_id
+          MODULES=(
+            "spring-data-valkey|io/valkey/springframework/data|spring-data-valkey"
+            "spring-boot-starter-data-valkey|io/valkey/springframework/boot|spring-boot-starter-data-valkey"
+          )
+
+          rm -rf bundle bundle.zip
+          for entry in "${MODULES[@]}"; do
+            IFS='|' read -r DIR GROUP ARTIFACT <<< "$entry"
+            OUT="bundle/${GROUP}/${ARTIFACT}/${VERSION}"
+            mkdir -p "$OUT"
+
+            # Published POM = the flattened pom.
+            cp "${DIR}/.flattened-pom.xml" "${OUT}/${ARTIFACT}-${VERSION}.pom"
+
+            for f in "${ARTIFACT}-${VERSION}.jar" "${ARTIFACT}-${VERSION}-sources.jar" "${ARTIFACT}-${VERSION}-javadoc.jar"; do
+              cp "${DIR}/target/${f}" "${OUT}/"
+              cp "${DIR}/target/${f}.asc" "${OUT}/"   # signatures from maven-gpg-plugin
+            done
+
+            # Sign the (flattened) POM, which target/*.asc does not cover.
+            gpg --batch --yes --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" \
+              -u "${GPG_KEYNAME}" --armor --detach-sign "${OUT}/${ARTIFACT}-${VERSION}.pom"
+
+            ( cd "$OUT"
+              for file in *.jar *.pom; do
+                md5sum "$file" | cut -d' ' -f1 > "${file}.md5"
+                sha1sum "$file" | cut -d' ' -f1 > "${file}.sha1"
+              done )
+          done
+
+          ( cd bundle && zip -qr ../bundle.zip . )
+          echo "Bundle contents:"; unzip -l bundle.zip
+
+      - name: Upload and release to Maven Central
         id: release
         run: |
           set -euo pipefail
           PORTAL="https://central.sonatype.com/api/v1/publisher"
-          STAGING="https://ossrh-staging-api.central.sonatype.com/manual/search/repositories"
+          AUTH="Bearer $(printf '%s:%s' "$OSSRH_USERNAME" "$OSSRH_PASSWORD" | base64 | tr -d '\n')"
 
-          state_of() {
-            curl -s -X POST -u "$OSSRH_USERNAME:$OSSRH_PASSWORD" "${PORTAL}/status?id=$1" | jq -r '.deploymentState'
-          }
-
-          # Find the Portal deployment id created by the maven deploy above.
-          REPOS="$(curl -s -u "$OSSRH_USERNAME:$OSSRH_PASSWORD" "${STAGING}?profile_id=io.valkey&state=closed")"
-          echo "$REPOS" | jq '.repositories | map({key, description, state, portal_deployment_id})'
-          if [ "$(echo "$REPOS" | jq '.repositories | length')" != "1" ]; then
-            echo "ERROR: expected exactly 1 closed staging repo."
+          # Upload the bundle; AUTOMATIC releases to Central after validation passes.
+          # Upload returns 201 with the deployment id as the plain-text body.
+          RESP="$(curl -s --fail-with-body -H "Authorization: $AUTH" \
+            --form bundle=@bundle.zip "${PORTAL}/upload?publishingType=AUTOMATIC")"
+          DEPLOYMENT_ID="$(echo "$RESP" | tail -n1)"
+          echo "Deployment: $DEPLOYMENT_ID"
+          # Guard against a malformed upload response (empty, whitespace, or an error
+          # body) rather than assuming a specific id format. The status poll below is
+          # the real validator of the id.
+          if [ -z "${DEPLOYMENT_ID// }" ] || echo "$DEPLOYMENT_ID" | grep -q '[[:space:]<]'; then
+            echo "ERROR: upload did not return a usable deployment id. Response was:"
+            echo "$RESP"
             exit 1
           fi
-          DEPLOYMENT_ID="$(echo "$REPOS" | jq -r '.repositories[0].portal_deployment_id')"
-          echo "Deployment: $DEPLOYMENT_ID"
 
-          # Wait for validation to finish before publishing.
-          for i in $(seq 1 30); do
-            STATE="$(state_of "$DEPLOYMENT_ID")"; echo "  validate [$i] $STATE"
-            case "$STATE" in
-              VALIDATED) break ;;
-              FAILED) echo "ERROR: validation FAILED."; exit 1 ;;
-            esac
-            [ "$i" = 30 ] && { echo "ERROR: timed out waiting for VALIDATED."; exit 1; }
-            sleep 10
-          done
-
-          # Publish (irreversible).
-          CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST -u "$OSSRH_USERNAME:$OSSRH_PASSWORD" "${PORTAL}/deployment/${DEPLOYMENT_ID}")"
-          echo "Publish HTTP $CODE"
-          [ "$CODE" = "204" ] || [ "$CODE" = "200" ] || { echo "ERROR: publish returned $CODE"; exit 1; }
-
-          # Confirm it reaches PUBLISHED.
-          for i in $(seq 1 30); do
-            STATE="$(state_of "$DEPLOYMENT_ID")"; echo "  publish [$i] $STATE"
+          # Confirm it reaches PUBLISHED. Fail fast on FAILED; tolerate transient
+          # unknown states but give up if they persist (likely a bad id or API outage).
+          unknown=0
+          for i in $(seq 1 40); do
+            STATE="$(curl -s -X POST -H "Authorization: $AUTH" "${PORTAL}/status?id=${DEPLOYMENT_ID}" | jq -r '.deploymentState')"
+            echo "  [$i] $STATE"
             case "$STATE" in
               PUBLISHED) echo "Released to Maven Central."; exit 0 ;;
-              FAILED) echo "ERROR: publish FAILED."; exit 1 ;;
+              FAILED) echo "ERROR: deployment FAILED."; exit 1 ;;
+              PENDING|VALIDATING|VALIDATED|PUBLISHING) unknown=0 ;;
+              *) unknown=$((unknown+1));
+                 [ "$unknown" -ge 3 ] && { echo "ERROR: repeated unexpected state '$STATE' (bad id or API error)."; exit 1; } ;;
             esac
             sleep 20
           done
-          echo "ERROR: timed out waiting for PUBLISHED (last: $STATE)."
+          echo "ERROR: timed out (last: $STATE)."
           exit 1
-
-      - name: Drop staging repository on failure
-        if: failure() && (steps.deploy.outcome == 'failure' || steps.release.outcome == 'failure')
-        run: |
-          # Clean up the staging repo so a retry starts fresh.
-          AUTH_HEADER="Bearer $(echo -n "${OSSRH_USERNAME}:${OSSRH_PASSWORD}" | base64 | tr -d '\n')"
-          REPOS=$(curl -s --header "Authorization: ${AUTH_HEADER}" \
-            "https://ossrh-staging-api.central.sonatype.com/manual/search/repositories?profile_id=io.valkey")
-          REPO_COUNT=$(echo "$REPOS" | jq '.repositories | length')
-          if [ "$REPO_COUNT" = "1" ]; then
-            REPO_KEY=$(echo "$REPOS" | jq -r '.repositories[0].key')
-            echo "Dropping repository: $REPO_KEY"
-            curl --fail --request DELETE --header "Authorization: ${AUTH_HEADER}" \
-              "https://ossrh-staging-api.central.sonatype.com/manual/drop/repository/${REPO_KEY}"
-          elif [ "$REPO_COUNT" = "0" ]; then
-            echo "No staging repository found - nothing to clean up"
-          else
-            echo "Multiple staging repositories found ($REPO_COUNT) - manual cleanup required"
-            echo "$REPOS" | jq '.repositories'
-          fi
