@@ -340,13 +340,9 @@ public class ValkeyGlideHashCommands implements ValkeyHashCommands {
 
 		@Override
 		public boolean hasNext() {
-			if (currentIndex < entries.size()) {
-				return true;
+			while (!finished && currentIndex >= entries.size()) {
+				scanNext();
 			}
-			if (finished) {
-				return false;
-			}
-			scanNext();
 			return currentIndex < entries.size();
 		}
 

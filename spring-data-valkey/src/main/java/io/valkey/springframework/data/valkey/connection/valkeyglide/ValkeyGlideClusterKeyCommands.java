@@ -116,13 +116,12 @@ public class ValkeyGlideClusterKeyCommands extends ValkeyGlideKeyCommands {
 
 		@Override
 		public boolean hasNext() {
-			if (closed)
+			if (closed) {
 				return false;
-			if (currentBatch.hasNext())
-				return true;
-			if (finished)
-				return false;
-			loadNextBatch();
+			}
+			while (!finished && !currentBatch.hasNext()) {
+				loadNextBatch();
+			}
 			return currentBatch.hasNext();
 		}
 

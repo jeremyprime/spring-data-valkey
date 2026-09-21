@@ -1495,13 +1495,9 @@ public class ValkeyGlideZSetCommands implements ValkeyZSetCommands {
 
 		@Override
 		public boolean hasNext() {
-			if (currentIndex < tuples.size()) {
-				return true;
+			while (!finished && currentIndex >= tuples.size()) {
+				scanNext();
 			}
-			if (finished) {
-				return false;
-			}
-			scanNext();
 			return currentIndex < tuples.size();
 		}
 

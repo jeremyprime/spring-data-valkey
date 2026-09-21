@@ -40,6 +40,7 @@ import glide.api.models.GlideString;
  * Implementation of {@link ValkeyKeyCommands} for Valkey-Glide.
  *
  * @author Ilia Kolominsky
+ * @author Mantas Aleknavičius
  * @since 2.0
  */
 public class ValkeyGlideKeyCommands implements ValkeyKeyCommands {
@@ -180,7 +181,11 @@ public class ValkeyGlideKeyCommands implements ValkeyKeyCommands {
 	}
 
 	/**
-	 * Simple implementation of a scan cursor for keys.
+	 * Simple implementation of a scan cursor for keys. A SCAN call can return an empty batch with a non-zero cursor, so
+	 * iteration must continue until either a key is available or the server returns cursor zero.
+	 *
+	 * @see <a href="https://valkey.io/commands/scan/#number-of-elements-returned-at-every-scan-call">Valkey SCAN
+	 * documentation</a>
 	 */
 	private static class ValkeyGlideKeyScanCursor implements Cursor<byte[]> {
 
@@ -216,20 +221,10 @@ public class ValkeyGlideKeyCommands implements ValkeyKeyCommands {
 
 		@Override
 		public boolean hasNext() {
-			// First check if we have items in current batch
-			if (currentBatch != null && currentBatch.hasNext()) {
-				return true;
+			while (!finished && (currentBatch == null || !currentBatch.hasNext())) {
+				loadNextBatch();
 			}
 
-			// If we're finished and no more items in current batch, return false
-			if (finished) {
-				return false;
-			}
-
-			// Try to load next batch
-			loadNextBatch();
-
-			// Check if we have items after loading next batch
 			return currentBatch != null && currentBatch.hasNext();
 		}
 

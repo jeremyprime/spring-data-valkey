@@ -387,13 +387,9 @@ public class ValkeyGlideSetCommands implements ValkeySetCommands {
 
 		@Override
 		public boolean hasNext() {
-			if (currentIndex < members.size()) {
-				return true;
+			while (!finished && currentIndex >= members.size()) {
+				scanNext();
 			}
-			if (finished) {
-				return false;
-			}
-			scanNext();
 			return currentIndex < members.size();
 		}
 
